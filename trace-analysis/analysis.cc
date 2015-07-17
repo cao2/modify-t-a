@@ -28,8 +28,11 @@ struct flow_instance_t
     }
     
     bool operator==(const flow_instance_t& other) {
-        return (flow_inst == other.flow_inst &&
-                cfg == other.cfg);
+        bool rst=(flow_inst->get_flow_name() == other.flow_inst->get_flow_name() &&cfg == other.cfg);
+        //cout<<"name compare    "<<flow_inst->get_flow_name()<<"::"<<other.flow_inst->get_flow_name()<<endl;
+        //cout<<"cfg compare   "<<cfg<<"::"<<other.cfg<<endl;
+        //cout<<"resutl"<<rst<<endl;
+        return rst;
     }
 
     flow_instance_t& operator=(const flow_instance_t& other) {
@@ -109,6 +112,34 @@ void print_scenario(const vector<lpn_t*> flow_spec, const scenario_t& scen)
     cout << endl;
 }
 
+bool equalscen(scenario_t x, scenario_t y){
+    bool rst=true;
+    if(x.size()==y.size())
+    {
+        for(uint32_t i=0;i<x.size();i++){
+            if(x.at(i)==y.at(i));
+            else
+                rst=false;
+        }
+    }
+    else
+        rst=false;
+    return rst;
+}
+vector<scenario_t> dscen(vector<scenario_t> vec){
+    vector<scenario_t> rst;
+    rst.push_back(vec.at(0));
+    for(uint32_t i=0;i<vec.size();i++){
+        bool flag=true;
+        for(uint32_t j=0; j< rst.size(); j++){
+            if(equalscen(vec.at(i),rst.at(j))!=true)
+                flag=false;
+        }
+        if (flag==false)
+            rst.push_back(vec.at(i));
+    }
+    return rst;
+}
 int main(int argc, char *argv[]) {
     
     // Build flow specification
@@ -226,41 +257,46 @@ int main(int argc, char *argv[]) {
     
     cout << "Info: read " << trace.size() << " messages." << endl;
     
-    stack<scenario_t> s_stack;
+    vector<scenario_t> s_stack;
     stack<uint32_t> tri_stack;
     
-    s_stack.push(scenario_t());
+    s_stack.push_back(scenario_t());
     tri_stack.push(0);
     
-    vector<scenario_t> good_scenario_vec;
-    vector<pair<scenario_t, uint32_t> > bad_scenario_vec;
+    vector<pair< vector<scenario_t>,uint32_t> >  bad_scenario_vec;
 
     // Matching message in the trace to scenairos.
+    bool match = false;
     while (tri_stack.size() != 0) {
-        scenario_t scenario = s_stack.top();
+        match=false;
         uint32_t tri = tri_stack.top();
-        
-        s_stack.pop();
         tri_stack.pop();
         
         // If index tri reaches the end of trace, store the current scenario.
         if (tri == trace.size()) {
-            good_scenario_vec.push_back(scenario);
             //break if a scenario is found to match all messages.
             break;
         }
-        
-        cout << endl << "***  processing tri = " << tri << endl;
-        cout << "***  current scenario: " << endl;
-        print_scenario(scenario);
-        cout << endl;
-        
+        s_stack=dscen(s_stack);
+        vector<scenario_t> tmp_s_stack=s_stack;
+
+        /**
+         cout << endl << "***  processing tri = " << tri << endl;
+         cout << "***  current scenario: " << endl;
+         print_scenario(scenario);
+         cout << endl;**/
         // Match the next message from trace against the current scenario.
         message_t msg(trace.at(tri));
-        
         cout << "***  " << msg.toString() << endl << endl;
+
+        vector<scenario_t> new_s_stack;
+        for(uint32_t ct=0;ct<s_stack.size();ct++)
+        {
+
+            scenario_t scenario = s_stack.at(ct);
         
-        bool match = false;
+            
+            
         // Match the enw_msg against the existing flow instances.
         for (uint32_t i = 0; i < scenario.size(); i++) {
             const flow_instance_t& f = scenario.at(i);
@@ -269,17 +305,17 @@ int main(int argc, char *argv[]) {
                 scenario_t new_scenario = scenario;
                 new_scenario.at(i).cfg = new_cfg;
                 match = true;
-                s_stack.push(new_scenario);
+                new_s_stack.push_back(new_scenario);
                 tri_stack.push(tri+1);
                 //cout << "Info: " << msg.toString() << "\t\t (" << f.flow_inst->get_flow_name() << ", " << f.inst_id << ")." << endl << flush;
-                cout << "+++  new scenario (1) pushed to stack" << endl;
-                print_scenario(new_scenario);
+                //cout << "+++  new scenario (1) pushed to stack" << endl;
+                //print_scenario(new_scenario);
             }
 
         }
-        
+        if(s_stack.size()<15){
         // Create a new flow instance to match msg.
-        for (uint32_t i = 0; i < flow_spec.size(); i++) {
+            for (uint32_t i = 0; i < flow_spec.size(); i++) {
             lpn_t* f = flow_spec.at(i);
             config_t new_cfg = f->accept(msg);
             if (new_cfg != null_cfg) {
@@ -289,47 +325,60 @@ int main(int argc, char *argv[]) {
                 ++flow_inst_cnt.at(i);
                 new_f.cfg = new_cfg;
                 new_scenario.push_back(new_f);
-                s_stack.push(new_scenario);
+                new_s_stack.push_back(new_scenario);
                 tri_stack.push(tri+1);
                 match = true;
                 
                 //cout << "Info: new instance (" << new_f.flow_inst->get_flow_name() << ", " << new_f.inst_id << ") is created" << endl << flush;
                 //cout << "Info: " << msg.toString() << "\t\t (" << new_f.flow_inst->get_flow_name() << ", " << new_f.inst_id << ")." << endl << flush;
                 
-                cout << "+++  new scenario (0) pushed to stack" << endl;
-                print_scenario(new_scenario);
+                //cout << "+++  new scenario (0) pushed to stack" << endl;
+                //print_scenario(new_scenario);
             }
+        }
+        }
+        
         }
         
         if (match == false) {
-            cout << "Info: " << msg.toString() << " not matched, backtrack." << endl;
-            bad_scenario_vec.push_back(make_pair(scenario, tri));
+            cout << "Info: " << trace.at(tri).toString() << " not matched, backtrack." << endl;
+            pair< vector<scenario_t>,uint32_t> tmp_bad;
+            tmp_bad.first=tmp_s_stack;
+            tmp_bad.second=tri;
+            bad_scenario_vec.push_back(tmp_bad);
+            break;
         }
-        
+        else{
+            s_stack=new_s_stack;
+        }
         cout << "======================================" << endl;
-    }
-    
-    
-    if (good_scenario_vec.size() > 0) {
+}
+    if (s_stack.size() > 0) {
         cout << endl
             << "***  Success -  the scanario that matches all messages is" << endl;
-        scenario_t good_scen = good_scenario_vec.front();
-        print_scenario(flow_spec, good_scen);
-    }
-    
-    else if (bad_scenario_vec.size() > 0) {
-        cout << endl
-        << "***  Failed - generating the partial scanarios" << endl;
-        for (uint32_t i = 0; i < bad_scenario_vec.size(); i++) {
-            pair<scenario_t, uint32_t> bad_scen = bad_scenario_vec.at(i);
-            uint32_t msg_idx = bad_scen.second;
-            message_t msg = trace.at(msg_idx);
-            cout << "***  the following partial scenario failed to match message (" << msg_idx << ") " << msg.toString() << endl;
-            print_scenario(flow_spec, bad_scen.first);
+        s_stack=dscen(s_stack);
+        for(uint32_t ctt=0;ctt<s_stack.size();ctt++){
+            scenario_t good_scen = s_stack.at(ctt);
+            print_scenario(flow_spec, good_scen);
             cout << endl;
         }
     }
+    
+    else if (bad_scenario_vec.size()>0) {
+        cout << endl
+        << "***  Failed - generating the partial scanarios" << endl;
+        pair<vector<scenario_t>,uint32_t> bad_scen= bad_scenario_vec.at(0);
+        uint32_t msg_idx = bad_scen.second;
+        message_t msg = trace.at(msg_idx);
+        cout << "***  the following partial scenario failed to match message (" << msg_idx << ") " << msg.toString() << endl;
+        
+        for(uint32_t ctt=0;ctt<s_stack.size();ctt++){
+            scenario_t tmp_print=bad_scen.first.at(ctt);
+            print_scenario(flow_spec, tmp_print);
+            cout << endl;}
+    }
     return 0;
+    
 }
 
 
